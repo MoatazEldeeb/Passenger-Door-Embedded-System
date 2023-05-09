@@ -18,6 +18,7 @@ void stop_motor();
 
 char window_state();
 
+void Delay_ms(int time_ms);
 
 
 	
