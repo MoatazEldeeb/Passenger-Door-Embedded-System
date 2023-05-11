@@ -20,19 +20,21 @@ xSemaphoreHandle passengerSemaphore;
 xSemaphoreHandle obstacleSemaphore;
 xSemaphoreHandle xCountingSemaphore;
 xSemaphoreHandle permissionSemaphore;
+xSemaphoreHandle limitSemaphore;
 xSemaphoreHandle PassengerLockedMutex;
 
 xQueueHandle xQueue;
+xQueueHandle limitQueue;
+
 portBASE_TYPE xstatus;
 uint8_t PassengerLocked = 0;
 
-
+char user;
 
 // Port B(2,3) : down and up for driver
 void driver(void *pvParameters){
 	char ptr;
 	uint32_t SW;
-	uint8_t locked;
 	
 	xSemaphoreTake(driverSemaphore,0);
 	for(;;)
@@ -46,10 +48,11 @@ void driver(void *pvParameters){
 				
 				//For Button Debounce
 				if(SW == 0){
-					Delay_ms(100);
+					Delay_ms(50);
 					SW = GET_BIT(GPIOB->DATA,3);
 					if(SW==0){
 						move_window_up();
+						user = 'd';
 					}
 				}
 				
@@ -62,6 +65,8 @@ void driver(void *pvParameters){
 				}
 		
 				stop_motor();
+				user = 'd';
+			
 				}else{
 					
 				}
@@ -73,18 +78,17 @@ void driver(void *pvParameters){
 				else if(ptr =='d'){
 					
 					SW = GET_BIT(GPIOB->DATA,2);
-				
 				//For Button Debounce
 				if(SW == 0){
-					Delay_ms(100);
+					Delay_ms(50);
 					SW = GET_BIT(GPIOB->DATA,2);
-					if(SW==0){
+					if(SW==0 ){
 						move_window_down();
+						user = 'd';
 					}
 				}
 				Delay_ms(1000);
 				SW = GET_BIT(GPIOB->DATA,2);
-				
 				
 				if(SW == 0){
 					while(SW==0){
@@ -92,6 +96,7 @@ void driver(void *pvParameters){
 				}
 		
 				stop_motor();
+				user = 'd';
 				}
 				}
 					
@@ -111,6 +116,7 @@ void obstacle(void *pvParameters){
 				
 		if(window_state() == 'u'){
 			move_window_down();
+			user = 'i';
 			Delay_ms(1000);
 			stop_motor();
 		}
@@ -129,7 +135,43 @@ void changePermission(void *pvParameters){
 			xSemaphoreTake(permissionSemaphore,portMAX_DELAY); 
 			xSemaphoreTake(PassengerLockedMutex, portMAX_DELAY);
 			PassengerLocked = GET_BIT(GPIOB->DATA,5);
+			if (PassengerLocked == 1 & user== 'p'){
+				stop_motor();
+			}
+			
 			xSemaphoreGive(PassengerLockedMutex);
+	}
+}
+
+void limit(void *pvParameters){
+	uint32_t SW;
+	char ptr;
+	xSemaphoreTake(limitSemaphore,0);
+	for(;;)
+	{
+			xSemaphoreTake(limitSemaphore,portMAX_DELAY); 
+			xQueueReceive(limitQueue,&ptr,0);
+			if(ptr =='u'){
+				if(window_state() == 'u'){
+					stop_motor();
+					user = 'l';
+					SW = GET_BIT(GPIOB->DATA , 6);
+					while(SW == 0){
+						SW = GET_BIT(GPIOB->DATA , 6);
+					}
+				}
+				
+			}else if (ptr == 'd'){
+				if(window_state() == 'd'){
+					stop_motor();
+					user = 'l';
+					SW = GET_BIT(GPIOB->DATA , 6);
+					while(SW == 0){
+						SW = GET_BIT(GPIOB->DATA , 6);
+					}
+					
+				}
+			}
 	}
 }
 
@@ -137,14 +179,12 @@ void changePermission(void *pvParameters){
 void passenger(void *pvParameters){
 	char ptr;
 	uint32_t SW;
-	uint8_t locked;
 	
 	xSemaphoreTake(passengerSemaphore,0);
 	for(;;)
 	{
 			xSemaphoreTake(passengerSemaphore,portMAX_DELAY);  
 			xQueueReceive(xQueue,&ptr,0);
-			locked = GET_BIT(GPIOB->DATA,5);
 			if (PassengerLocked==0){
 			if(ptr =='u'){
 				
@@ -152,10 +192,11 @@ void passenger(void *pvParameters){
 				
 				//For Button Debounce
 				if(SW == 0& PassengerLocked==0){
-					Delay_ms(100);
+					Delay_ms(50);
 					SW = GET_BIT(GPIOB->DATA,1);
 					if(SW==0& PassengerLocked==0){
 						move_window_up();
+						user = 'p';
 					}
 				}
 				Delay_ms(1000);
@@ -173,28 +214,28 @@ void passenger(void *pvParameters){
 					xSemaphoreGive(PassengerLockedMutex);
 		
 				stop_motor();
+				user = 'p';
 			}
 				
 			
 			}
 				else if(ptr =='d'){
 					SW = GET_BIT(GPIOB->DATA,0);
-				
 				//For Button Debounce
-				if(SW == 0& PassengerLocked==0){
-					Delay_ms(100);
+				if(SW == 0& PassengerLocked==0 ){
+					Delay_ms(50);
 					SW = GET_BIT(GPIOB->DATA,0);
 					if(SW==0& PassengerLocked==0){
 						move_window_down();
+						user = 'p';
 					}
 				}
 				Delay_ms(1000);
 				SW = GET_BIT(GPIOB->DATA,0);
 				
-				
-				if(SW == 0 & PassengerLocked==0){
+				if(SW == 0 & PassengerLocked==0 ){ //pressed , not locked , limit mesh mtdas 
 					xSemaphoreTake(PassengerLockedMutex, portMAX_DELAY);
-					while(SW==0 & PassengerLocked==0){
+					while(SW==0 & PassengerLocked==0 ){
 					xSemaphoreGive(PassengerLockedMutex);
 					SW = GET_BIT(GPIOB->DATA,0);
 					xSemaphoreTake(PassengerLockedMutex, portMAX_DELAY);
@@ -202,6 +243,7 @@ void passenger(void *pvParameters){
 					xSemaphoreGive(PassengerLockedMutex);
 		
 				stop_motor();
+				user = 'p';
 				}
 			}
 				
@@ -215,23 +257,7 @@ void passenger(void *pvParameters){
 
 	
 
-void vTestTask1(void *pvParameters){	
-	uint32_t SW;
-	for(;;){
-		SW = GET_BIT(GPIOF->DATA,0);
-		
-		if(SW == 0){
-			SET_BIT(GPIOF->DATA,3);
-		}
-		
-		while(SW==0){
-			SW = GET_BIT(GPIOF->DATA,0);
-		}
-		
-		CLEAR_BIT(GPIOF->DATA,3);
-		
-	}
-}
+
 
 //This Periodic task is preempted by the task "Handler"
 void vTestTask(void *pvParameters){	
@@ -267,38 +293,27 @@ int main( void )
 		PortA_Init();
 		PortB_Init();
 		__ASM("CPSIE i");
-		
+		PassengerLocked = GET_BIT(GPIOB->DATA,5);
 		vSemaphoreCreateBinary(driverSemaphore);
 		vSemaphoreCreateBinary(passengerSemaphore);
 		vSemaphoreCreateBinary(obstacleSemaphore);
+		vSemaphoreCreateBinary(limitSemaphore);
+		
 		//xCountingSemaphore = xSemaphoreCreateCounting(3000,0);
 		//vSemaphoreCreateBinary(xCountingSemaphore);
 		vSemaphoreCreateBinary(permissionSemaphore);
 		PassengerLockedMutex = xSemaphoreCreateMutex();
 
-	
+		limitQueue=xQueueCreate(2,sizeof(char));
 		xQueue=xQueueCreate(2,sizeof(char));
 		//xBinarySemaphore = xSemaphoreCreateBinary();
 	if( driverSemaphore != NULL )
 		{
-			/* Create the 'handler' task. This is the task that will be synchronized
-			with the interrupt. The handler task is created with a high priority to
-			ensure it runs immediately after the interrupt exits. In this case a
-			priority of 3 is chosen. */
-			//xTaskCreate( Handler, "Handler", 240, NULL, 3, NULL );
-			/* Create the task that will periodically generate a software interrupt.
-			This is created with a priority below the handler task to ensure it will
-			get preempted each time the handler task exits the Blocked state. */
-			//xTaskCreate( vPeriodicTask, "Periodic", 240, NULL, 1, NULL );
 			xTaskCreate( passenger, "passenger", 240, NULL, 2, NULL );
 			xTaskCreate( driver, "driver", 240, NULL, 3, NULL );
 			xTaskCreate( changePermission, "ChangePermission", 240, NULL, 4, NULL );
-			xTaskCreate( obstacle, "obstacle", 240, NULL, 5, NULL );
-			
-			//xTaskCreate( vTestTask, "vTestTask", 240, NULL, 5, NULL );
-			
-			//xTaskCreate( vTestTask, "vTestTask", 240, NULL, 5, NULL );
-			//xTaskCreate( vContinousTask, "vContinousTask", 240, NULL, 1, NULL );
+			xTaskCreate( obstacle, "obstacle", 240, NULL, 6, NULL );
+			xTaskCreate( limit, "limit", 240, NULL, 5, NULL );
 
 
 			/* Start the scheduler so the created tasks start executing. */
@@ -336,20 +351,20 @@ void PortF_Init(void){
 	NVIC_EnableIRQ(PortF_IRQn);        // Enable the Interrupt for PortF in NVIC
 }
 
-// OUTPUTS:  port A pins(4,5,6,7)
+// OUTPUTS:  port A pins(4,5,)
 //	(4,5) : Motor Pins
-//
 void PortA_Init(void){ 
   SYSCTL->RCGCGPIO |= 0x00000001;    // 1) A clock
   GPIOA->LOCK = 0x4C4F434B;  				 // 2) unlock PortA PA0  
-  GPIOA->CR = 0xFF;          				 // allow changes to PA4-0       
+  GPIOA->CR = 0x30;          				 // allow changes to PA4-0       
   GPIOA->AMSEL= 0x00;       				 // 3) disable analog function
   GPIOA->PCTL = 0x00000000;  				 // 4) GPIO clear bit PCTL  
-  GPIOA->DIR = 0x0F0;         				 // 5) 4 OUTPUT , 4 INPUT  
+  GPIOA->DIR = 0x30;         				 // 5) 4 OUTPUT , 4 INPUT  
   GPIOA->AFSEL = 0x00;      				 // 6) no alternate function
   GPIOA->PUR = 0x00;       				   // enable pullup resistors on first 4 pins      
   GPIOA->DEN = 0xFF;       				   // 7) enable digital pins PF4-PF0
 	GPIOA->DATA = 0x00;
+	
 	
 }
 
@@ -358,6 +373,7 @@ void PortA_Init(void){
 // (2,3) : down and up for driver
 // (4) : obstacle
 // (5) : lock Passenger
+// (6,7): Limit down and up
 void PortB_Init(void){ 
   SYSCTL->RCGCGPIO |= 0x00000002;    // 1) A clock
   GPIOB->LOCK = 0x4C4F434B;  				 // 2) unlock PortA PA0  
@@ -366,15 +382,15 @@ void PortB_Init(void){
   GPIOB->PCTL = 0x00000000;  				 // 4) GPIO clear bit PCTL  
   GPIOB->DIR = 0x00;         				 // 5) 4 OUTPUT , 4 INPUT  
   GPIOB->AFSEL = 0x00;      				 // 6) no alternate function
-  GPIOB->PUR = (0x3F);       				   // enable pullup resistors on first 4 pins   
-  GPIOB->DEN = 0x3F;       				   // 7) enable digital pins PF4-PF0
+  GPIOB->PUR = (0xFF);       				   // enable pullup resistors on first 4 pins   
+  GPIOB->DEN = 0xFF;       				   // 7) enable digital pins PF4-PF0
 	GPIOB->DATA = 0x00;
 	
 	// Setup the interrupt on PortA
-	GPIOB->ICR = 0x3F;     // Clear any Previous Interrupt 
-	GPIOB->IM = 0x3F;      // Unmask the interrupts for PF0 and PF4
-	GPIOB->IS &= ~(1<<5)|~(1<<4)|~(1<<3)|~(1<<2)|~(1<<1)|~(1<<0);    // Make bits PF0 and PF4 level sensitive
-	GPIOB->IBE |= (1<<5) ;
+	GPIOB->ICR = 0xFF;     // Clear any Previous Interrupt 
+	GPIOB->IM = 0xFF;      // Unmask the interrupts for PF0 and PF4
+	GPIOB->IS &= ~(1<<7)|~(1<<6)|~(1<<5)|~(1<<4)|~(1<<3)|~(1<<2)|~(1<<1)|~(1<<0);    // Make bits PF0 and PF4 level sensitive
+	GPIOB->IBE |= (1<<5) ;  // 
 //	GPIOB->IBE &=~(1<<5)|~(1<<4)|~(1<<3)|~(1<<2)|~(1<<1)|~(1<<0);     /* trigger is controlled by IEV */
 //	GPIOB->IEV &= ~(1<<5)|~(1<<4)|~(1<<3)|~(1<<2)|~(1<<1)|~(1<<0);      /* falling edge trigger */
 
@@ -473,14 +489,26 @@ void GPIOB_Handler(void){
 			SET_BIT(GPIOB->ICR,5);        // clear the interrupt flag of PORTF
 			i= GPIOB->ICR ;           // Reading the register to force the flag to be cleared
 	}
+	 //BIT 6
+	 else if((GPIOB->MIS & 0x40)){
+			s= 'd';
+			xstatus = xQueueSendFromISR(limitQueue,&s,&xHigherPriorityTaskWoken);
+		  xSemaphoreGiveFromISR(limitSemaphore,&xHigherPriorityTaskWoken);
+		 
+			SET_BIT(GPIOB->ICR,6);        // clear the interrupt flag of PORTF
+			i= GPIOB->ICR ;           // Reading the register to force the flag to be cleared
+	}
+	 //BIT 7
+	 else if((GPIOB->MIS & 0x80)){
+			s = 'u';
+			xstatus = xQueueSendFromISR(limitQueue,&s,&xHigherPriorityTaskWoken);
+		  xSemaphoreGiveFromISR(limitSemaphore,&xHigherPriorityTaskWoken);
+			SET_BIT(GPIOB->ICR,7);        // clear the interrupt flag of PORTF
+			i= GPIOB->ICR ;           // Reading the register to force the flag to be cleared
+	}
+	
 	 
 	 
 	 
 	portEND_SWITCHING_ISR( xHigherPriorityTaskWoken );
 }
-
-
-	
-	
-
-	

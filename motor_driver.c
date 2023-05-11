@@ -7,7 +7,6 @@ void move_window_up(){
 	
 	SET_BIT((GPIOA->DATA),4);
 	CLEAR_BIT((GPIOA->DATA),5);
-	
 }
 
 //digitalWrite(in1, LOW);
@@ -37,6 +36,7 @@ char window_state(){
 	}
 	
 }
+
 
 void Delay_ms(int time_ms)
 {
