@@ -10,7 +10,6 @@
 #define PortA_IRQn 0
 #define PortB_IRQn 1
 
-void PortF_Init(void);
 void PortA_Init(void);
 void PortB_Init(void);
 
@@ -18,7 +17,6 @@ void PortB_Init(void);
 xSemaphoreHandle driverSemaphore;
 xSemaphoreHandle passengerSemaphore;
 xSemaphoreHandle obstacleSemaphore;
-xSemaphoreHandle xCountingSemaphore;
 xSemaphoreHandle permissionSemaphore;
 xSemaphoreHandle limitSemaphore;
 xSemaphoreHandle PassengerLockedMutex;
@@ -48,7 +46,7 @@ void driver(void *pvParameters){
 				
 				//For Button Debounce
 				if(SW == 0){
-					Delay_ms(50);
+					vTaskDelay(50);
 					SW = GET_BIT(GPIOB->DATA,3);
 					if(SW==0){
 						move_window_up();
@@ -56,7 +54,7 @@ void driver(void *pvParameters){
 					}
 				}
 				
-				Delay_ms(1000);
+				vTaskDelay(1000);
 				SW = GET_BIT(GPIOB->DATA,3);
 				
 				if(SW == 0){
@@ -80,14 +78,14 @@ void driver(void *pvParameters){
 					SW = GET_BIT(GPIOB->DATA,2);
 				//For Button Debounce
 				if(SW == 0){
-					Delay_ms(50);
+					vTaskDelay(50);
 					SW = GET_BIT(GPIOB->DATA,2);
 					if(SW==0 ){
 						move_window_down();
 						user = 'd';
 					}
 				}
-				Delay_ms(1000);
+				vTaskDelay(1000);
 				SW = GET_BIT(GPIOB->DATA,2);
 				
 				if(SW == 0){
@@ -111,18 +109,23 @@ void obstacle(void *pvParameters){
 	for(;;)
 	{
 			xSemaphoreTake(obstacleSemaphore,portMAX_DELAY);  
-				
-			//For Button Debounce
-				
-		if(window_state() == 'u'){
-			move_window_down();
-			user = 'i';
-			Delay_ms(1000);
-			stop_motor();
-		}
+		
+		// Delay to make sure that obstacle button is pressed
+		vTaskDelay(100);
 		SW = GET_BIT(GPIOB->DATA,4);
-		while(SW==0){
+		if(SW ==0){
+			
+					
+			if(window_state() == 'u'){
+				move_window_down();
+				user = 'i';
+				vTaskDelay(1000);
+				stop_motor();
+			}
 			SW = GET_BIT(GPIOB->DATA,4);
+			while(SW==0){
+				SW = GET_BIT(GPIOB->DATA,4);
+			}
 		}
 	}
 }
@@ -149,6 +152,7 @@ void limit(void *pvParameters){
 	xSemaphoreTake(limitSemaphore,0);
 	for(;;)
 	{
+			
 			xSemaphoreTake(limitSemaphore,portMAX_DELAY); 
 			xQueueReceive(limitQueue,&ptr,0);
 			if(ptr =='u'){
@@ -192,14 +196,14 @@ void passenger(void *pvParameters){
 				
 				//For Button Debounce
 				if(SW == 0& PassengerLocked==0){
-					Delay_ms(50);
+					vTaskDelay(50);
 					SW = GET_BIT(GPIOB->DATA,1);
 					if(SW==0& PassengerLocked==0){
 						move_window_up();
 						user = 'p';
 					}
 				}
-				Delay_ms(1000);
+				vTaskDelay(1000);
 				SW = GET_BIT(GPIOB->DATA,1);
 				
 				
@@ -223,14 +227,14 @@ void passenger(void *pvParameters){
 					SW = GET_BIT(GPIOB->DATA,0);
 				//For Button Debounce
 				if(SW == 0& PassengerLocked==0 ){
-					Delay_ms(50);
+					vTaskDelay(50);
 					SW = GET_BIT(GPIOB->DATA,0);
 					if(SW==0& PassengerLocked==0){
 						move_window_down();
 						user = 'p';
 					}
 				}
-				Delay_ms(1000);
+				vTaskDelay(1000);
 				SW = GET_BIT(GPIOB->DATA,0);
 				
 				if(SW == 0 & PassengerLocked==0 ){ //pressed , not locked , limit mesh mtdas 
@@ -252,44 +256,11 @@ void passenger(void *pvParameters){
 					
 		}
 }
-		
 
-
-	
-
-
-
-//This Periodic task is preempted by the task "Handler"
-void vTestTask(void *pvParameters){	
-	uint32_t SW;
-	xSemaphoreTake(xCountingSemaphore,0);
-	
-	for(;;){
-		xSemaphoreTake(xCountingSemaphore,portMAX_DELAY);
-		
-		SW = GET_BIT(GPIOF->DATA,0);
-		
-		if(SW == 0){
-			SET_BIT(GPIOF->DATA,3);
-		}
-		
-		while(SW == 0){
-			SW = GET_BIT(GPIOF->DATA,0);
-		}
-		
-		CLEAR_BIT(GPIOF->DATA,3);
-	}
-}
-
-void vContinousTask(void *pvParameters){	
-	for(;;){
-	}
-}
                          /*main function*/
 /*------------------------------------------------------------------------*/
 int main( void )
 {
-    PortF_Init();
 		PortA_Init();
 		PortB_Init();
 		__ASM("CPSIE i");
@@ -299,14 +270,12 @@ int main( void )
 		vSemaphoreCreateBinary(obstacleSemaphore);
 		vSemaphoreCreateBinary(limitSemaphore);
 		
-		//xCountingSemaphore = xSemaphoreCreateCounting(3000,0);
-		//vSemaphoreCreateBinary(xCountingSemaphore);
 		vSemaphoreCreateBinary(permissionSemaphore);
 		PassengerLockedMutex = xSemaphoreCreateMutex();
 
 		limitQueue=xQueueCreate(2,sizeof(char));
 		xQueue=xQueueCreate(2,sizeof(char));
-		//xBinarySemaphore = xSemaphoreCreateBinary();
+	
 	if( driverSemaphore != NULL )
 		{
 			xTaskCreate( passenger, "passenger", 240, NULL, 2, NULL );
@@ -330,26 +299,6 @@ int main( void )
 /*------------------------------------------------------------------------*/
 //Initialize the hardware of Port-F4
 
-void PortF_Init(void){ 
-  SYSCTL->RCGCGPIO |= 0x00000020;    // 1) F clock
-  GPIOF->LOCK = 0x4C4F434B;  				 // 2) unlock PortF PF0  
-  GPIOF->CR = 0x1F;          				 // allow changes to PF4-0       
-  GPIOF->AMSEL= 0x00;       				 // 3) disable analog function
-  GPIOF->PCTL = 0x00000000;  				 // 4) GPIO clear bit PCTL  
-  GPIOF->DIR = 0x0E;         				 // 5) PF4,PF0 input, PF3,PF2,PF1 output   
-  GPIOF->AFSEL = 0x00;      				 // 6) no alternate function
-  GPIOF->PUR = ~(0x0E);       				   // enable pullup resistors on PF4,PF0       
-  GPIOF->DEN = 0xFF;       				   // 7) enable digital pins PF4-PF0
-	GPIOF->DATA = 0x00;
-	
-	// Setup the interrupt on PortF
-	GPIOF->ICR = 0x11;     // Clear any Previous Interrupt
-	GPIOF->IM |=0x11;      // Unmask the interrupts for PF0 and PF4
-	//GPIOF->IS |= 0x11;     // Make bits PF0 and PF4 level sensitive
-	//GPIOF->IEV &= ~0x11;   // Sense on Low Level
-
-	NVIC_EnableIRQ(PortF_IRQn);        // Enable the Interrupt for PortF in NVIC
-}
 
 // OUTPUTS:  port A pins(4,5,)
 //	(4,5) : Motor Pins
@@ -399,38 +348,6 @@ void PortB_Init(void){
 
 
 /*------------------------------------------------------------------------*/
-//Port-F handler
-void GPIOF_Handler(void){
-
-	uint32_t i;
-	portBASE_TYPE xHigherPriorityTaskWoken = pdFALSE;
-	char s;
-	uint32_t SW;
-	
-	               //driver 
-	//Give the semaphore to the Task named handler
-	if((GPIOF->MIS & 0x01)){
-			//s = 'u';
-			//xstatus = xQueueSendFromISR(xQueue,&s,&xHigherPriorityTaskWoken);
-		  xSemaphoreGiveFromISR(xCountingSemaphore,&xHigherPriorityTaskWoken);
-			
-			GPIOF->ICR |= 0x01;       // clear the interrupt flag of PORTF
-			i= GPIOF->ICR ;           // Reading the register to force the flag to be cleared
-	}
-
-	
-	/* Giving the semaphore may have unblocked a task - if it did and the
-	unblocked task has a priority equal to or above the currently executing
-	task then xHigherPriorityTaskWoken will have been set to pdTRUE and
-	portEND_SWITCHING_ISR() will force a context switch to the newly unblocked
-	higher priority task.
-	NOTE: The syntax for forcing a context switch within an ISR varies between
-	FreeRTOS ports. The portEND_SWITCHING_ISR() macro is provided as part of
-	the Corte M3 port layer for this purpose. taskYIELD() must never be called
-	from an ISR! */
-	portEND_SWITCHING_ISR( xHigherPriorityTaskWoken );
-}
-
 
 void GPIOB_Handler(void){
 	uint32_t i;
@@ -475,8 +392,6 @@ void GPIOB_Handler(void){
 	}
 	 //BIT 4
 	 else if((GPIOB->MIS & 0x10)){
-			s = 'd';
-			xstatus = xQueueSendFromISR(xQueue,&s,&xHigherPriorityTaskWoken);
 		  xSemaphoreGiveFromISR(obstacleSemaphore,&xHigherPriorityTaskWoken);
 			SET_BIT(GPIOB->ICR,4);        // clear the interrupt flag of PORTF
 			i= GPIOB->ICR ;           // Reading the register to force the flag to be cleared
